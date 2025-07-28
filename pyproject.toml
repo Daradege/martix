@@ -1,6 +1,6 @@
 [project]
 name = "martix"
-version = "0.1.0"
+version = "0.2.5"
 authors = [
     { name = "Ali Safamanesh", email = "daradege@proton.me" }
 ]
@@ -13,7 +13,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 license = { file = "LICENSE" }
-dependencies = ["matrix-nio>=0.20.0", "aiofiles>=23.0.0", "pillow>=10.0.0"]
+dependencies = ["aiofiles>=23.0.0", "pillow>=10.0.0", "matrix-nio[e2e]"]
 [project.urls]
 github = "https://github.com/daradege/martix"
 website = "https://martix.daradege.ir"

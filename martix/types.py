@@ -237,7 +237,8 @@ class Message:
                 }
             }
         }
-        await self._client.room_send(self._room.room_id, "m.room.message", content)
+        response = await self._client.room_send(self._room.room_id, "m.room.message", content)
+        return response.event_id
         
     async def react(self, emoji: str) -> None:
         """
@@ -253,7 +254,8 @@ class Message:
                 "key": emoji
             }
         }
-        await self._client.room_send(self._room.room_id, "m.reaction", content)
+        response = await self._client.room_send(self._room.room_id, "m.reaction", content)
+        return response.event_id
 
 
 class Command(Message):

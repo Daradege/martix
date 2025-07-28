@@ -9,7 +9,9 @@ from typing import Optional, Callable, Dict, Any, List
 from pathlib import Path
 
 from nio import AsyncClient, MatrixRoom, RoomMessageText, LoginResponse, SyncResponse
-from nio.events import Event, RoomMessage, InviteEvent, RoomMemberEvent
+from nio.events import Event, RoomMessage, InviteEvent, RoomMemberEvent, MegolmEvent
+from nio.store import SqliteStore
+from nio.crypto import OlmDevice
 
 from .types import Message, Command, User, Room, File
 from .events import EventHandler
@@ -25,7 +27,9 @@ class Client:
     including authentication, message handling, and event processing.
     """
     
-    def __init__(self, user_id: str, password: str, homeserver: str, device_name: str = "Martix Bot"):
+    def __init__(self, user_id: str, password: str, homeserver: str, 
+                 device_name: str = "Martix Bot", e2ee: bool = False, 
+                 store_path: str = "./.store"):
         """
         Initialize the Matrix client.
         
@@ -34,11 +38,15 @@ class Client:
             password: User password
             homeserver: Matrix homeserver URL
             device_name: Device name for this session
+            e2ee: Enable end-to-end encryption support
+            store_path: Path to store encryption keys and state
         """
         self.user_id = user_id
         self.password = password
         self.homeserver = homeserver
         self.device_name = device_name
+        self.e2ee = e2ee
+        self.store_path = Path(store_path)
         self.command_prefix = "/"
         
         self._client: Optional[AsyncClient] = None
@@ -46,6 +54,9 @@ class Client:
         self._user: Optional[User] = None
         self._sync_token_file = Path(".martix_sync_token")
         self._next_batch: Optional[str] = None
+        
+        if self.e2ee:
+            self.store_path.mkdir(exist_ok=True)
         
     @property
     def user(self) -> Optional[User]:
@@ -124,7 +135,24 @@ class Client:
             AuthenticationError: If login fails
             NetworkError: If connection fails
         """
-        self._client = AsyncClient(self.homeserver, self.user_id, device_id=self.device_name)
+        if self.e2ee:
+            store = SqliteStore(
+                user_id=self.user_id,
+                device_id=self.device_name,
+                store_path=str(self.store_path)
+            )
+            self._client = AsyncClient(
+                homeserver=self.homeserver,
+                user=self.user_id,
+                device_id=self.device_name,
+                store_path=str(self.store_path)
+            )
+        else:
+            self._client = AsyncClient(
+                homeserver=self.homeserver,
+                user=self.user_id,
+                device_id=self.device_name
+            )
         
         try:
             response = await self._client.login(self.password, device_name=self.device_name)
@@ -133,9 +161,16 @@ class Client:
                 
             self._user = create_user_object(self.user_id, self._client)
             
+            if self.e2ee:
+                await self._setup_e2ee()
+            
+            # Trust all devices by default to avoid verification issues
+            if self.e2ee:
+                self._client.trust_devices = True
+            
             self._load_sync_token()
             
-            self._client.add_event_callback(self._handle_message, RoomMessageText)
+            self._client.add_event_callback(self._handle_message, (RoomMessageText, MegolmEvent))
             self._client.add_event_callback(self._handle_invite, InviteEvent)
             self._client.add_event_callback(self._handle_member_event, RoomMemberEvent)
             
@@ -147,6 +182,21 @@ class Client:
             if isinstance(e, (AuthenticationError, NetworkError)):
                 raise
             raise NetworkError(f"Failed to start client: {e}")
+        finally:
+            if self._client:
+                await self._client.close()
+                
+    async def _setup_e2ee(self) -> None:
+        """Setup end-to-end encryption."""
+        if not self.e2ee or not self._client:
+            return
+            
+        # Upload keys if needed
+        if self._client.should_upload_keys:
+            await self._client.keys_upload()
+        
+        # Trust devices will be handled during sync
+        # We'll auto-verify devices as they appear during message handling
             
     def run(self) -> None:
         """
@@ -156,7 +206,7 @@ class Client:
         """
         asyncio.run(self.start())
         
-    async def send_message(self, room_id: str, text: str, reply_to: Optional[str] = None) -> None:
+    async def send_message(self, room_id: str, text: str, reply_to: Optional[str] = None) -> str:
         """
         Send a text message to a room.
         
@@ -164,15 +214,19 @@ class Client:
             room_id: Target room ID
             text: Message text
             reply_to: Event ID to reply to (optional)
+            
+        Returns:
+            Event ID of the sent message
         """
         content = {"msgtype": "m.text", "body": text}
         
         if reply_to:
             content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
             
-        await self.client.room_send(room_id, "m.room.message", content)
+        response = await self.client.room_send(room_id, "m.room.message", content)
+        return response.event_id
         
-    async def send_file(self, room_id: str, file_path: str, filename: Optional[str] = None) -> None:
+    async def send_file(self, room_id: str, file_path: str, filename: Optional[str] = None) -> str:
         """
         Send a file to a room.
         
@@ -180,6 +234,9 @@ class Client:
             room_id: Target room ID
             file_path: Path to the file
             filename: Custom filename (optional)
+            
+        Returns:
+            Event ID of the sent message
         """
         file_path = Path(file_path)
         if not file_path.exists():
@@ -195,9 +252,10 @@ class Client:
             "info": {"size": file_path.stat().st_size}
         }
         
-        await self.client.room_send(room_id, "m.room.message", content)
+        response = await self.client.room_send(room_id, "m.room.message", content)
+        return response.event_id
         
-    async def send_image(self, room_id: str, image_path: str, caption: Optional[str] = None) -> None:
+    async def send_image(self, room_id: str, image_path: str, caption: Optional[str] = None) -> str:
         """
         Send an image to a room.
         
@@ -205,6 +263,9 @@ class Client:
             room_id: Target room ID
             image_path: Path to the image
             caption: Image caption (optional)
+            
+        Returns:
+            Event ID of the sent message
         """
         image_path = Path(image_path)
         if not image_path.exists():
@@ -220,7 +281,8 @@ class Client:
             "info": {"size": image_path.stat().st_size}
         }
         
-        await self.client.room_send(room_id, "m.room.message", content)
+        response = await self.client.room_send(room_id, "m.room.message", content)
+        return response.event_id
         
     async def join_room(self, room_id: str) -> None:
         """
@@ -275,13 +337,64 @@ class Client:
                 if isinstance(response, SyncResponse):
                     self._next_batch = response.next_batch
                     self._save_sync_token(self._next_batch)
+                    
+                    if self.e2ee:
+                        await self._handle_key_verification(response)
+                        
             except Exception as e:
                 print(f"Sync error: {e}")
                 await asyncio.sleep(5)
                 
-    async def _handle_message(self, room: MatrixRoom, event: RoomMessageText) -> None:
+    async def _handle_key_verification(self, response: SyncResponse) -> None:
+        """Handle key verification after sync."""
+        if not self.e2ee or not self._client:
+            return
+            
+        # Upload keys if needed
+        if self._client.should_upload_keys:
+            await self._client.keys_upload()
+        
+        # Query keys for users in rooms to get device info
+        try:
+            users_to_query = set()
+            for room in self._client.rooms.values():
+                users_to_query.update(room.users)
+            
+            # if users_to_query:
+            #     await self._client.keys_query()
+                
+            # Auto-verify devices after querying
+            for user_id in self._client.device_store.users:
+                user_devices = self._client.device_store[user_id]
+                for device in user_devices.values():
+                    if not device.verified and not device.blacklisted:
+                        try:
+                            self._client.verify_device(device)
+                        except Exception as e:
+                            print(f"Could not verify device {device.id} for {user_id}: {e}")
+        except Exception as e:
+            print(f"Key verification error: {e}")
+                
+    async def _handle_message(self, room: MatrixRoom, event) -> None:
         """Handle incoming message events."""
         if event.sender == self.user_id:
+            return
+            
+        if isinstance(event, MegolmEvent):
+            try:
+                decrypted_event = await self._client.decrypt_event(event)
+                if hasattr(decrypted_event, 'body'):
+                    event = decrypted_event
+                else:
+                    print(f"Could not decrypt event from {event.sender}")
+                    return
+            except Exception as e:
+                print(f"Decryption failed for event from {event.sender}: {e}")
+                # Continue processing even if decryption fails
+                if not hasattr(event, 'body'):
+                    return
+                
+        if not hasattr(event, 'body') or not event.body:
             return
             
         message = create_message_object(room, event, self.client)
