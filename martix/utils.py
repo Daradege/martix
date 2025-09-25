@@ -2,8 +2,9 @@
 Utility functions for Martix library.
 """
 
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from nio import AsyncClient, MatrixRoom, RoomMessageText
+import markdown
 
 from .types import Message, Command, User, Room
 
@@ -160,3 +161,16 @@ def sanitize_filename(filename: str) -> str:
     filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
     filename = filename.strip('. ')
     return filename or 'unnamed_file'
+
+def markdown_to_html(text: str) -> str:
+    """
+    Convert Markdown text to HTML.
+
+    Args:
+        text: markdown text to convert
+
+    Returns:
+        html converted text
+    """
+    html = markdown.markdown(text)
+    return html

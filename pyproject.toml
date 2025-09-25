@@ -13,7 +13,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 license = { file = "LICENSE" }
-dependencies = ["aiofiles>=23.0.0", "pillow>=10.0.0", "matrix-nio[e2e]"]
+dependencies = ["aiofiles>=23.0.0", "pillow>=10.0.0", "matrix-nio[e2e]", "markdown"]
 [project.urls]
 github = "https://github.com/daradege/martix"
 website = "https://martix.daradege.ir"

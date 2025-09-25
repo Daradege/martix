@@ -13,10 +13,10 @@ from nio.events import Event, RoomMessage, InviteEvent, RoomMemberEvent, MegolmE
 from nio.store import SqliteStore
 from nio.crypto import OlmDevice
 
-from .types import Message, Command, User, Room, File
+from .types import Message, Command, User, Room, File, ParseTypes
 from .events import EventHandler
 from .exceptions import AuthenticationError, NetworkError, MartixError
-from .utils import parse_command, create_message_object, create_user_object, create_room_object
+from .utils import parse_command, create_message_object, create_user_object, create_room_object, markdown_to_html
 
 
 class Client:
@@ -205,27 +205,39 @@ class Client:
         This method creates an event loop and runs the client.
         """
         asyncio.run(self.start())
-        
-    async def send_message(self, room_id: str, text: str, reply_to: Optional[str] = None) -> str:
+
+    async def send_message(self, room_id: str, text: str, reply_to: Optional[str] = None, parse_mode: Optional[ParseTypes] = ParseTypes.MARKDOWN) -> str:
         """
         Send a text message to a room.
-        
+
         Args:
             room_id: Target room ID
             text: Message text
             reply_to: Event ID to reply to (optional)
-            
+            parse_mode: How to parse message text, default is types.ParseTypes.MARKDOWN (optional)
+
         Returns:
             Event ID of the sent message
         """
-        content = {"msgtype": "m.text", "body": text}
-        
+
+        content = {
+            "msgtype": "m.text",
+            "body": text.strip()
+        }
+
+        if parse_mode != ParseTypes.TEXT:
+            content["format"] = "org.matrix.custom.html"
+
+            if parse_mode == ParseTypes.MARKDOWN:
+                content["formatted_body"] = markdown_to_html(text.strip())
+            elif parse_mode == ParseTypes.HTML:
+                content["formatted_body"] = text
+
         if reply_to:
             content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
-            
+
         response = await self.client.room_send(room_id, "m.room.message", content)
         return response.event_id
-        
     async def send_file(self, room_id: str, file_path: str, filename: Optional[str] = None) -> str:
         """
         Send a file to a room.

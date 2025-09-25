@@ -6,8 +6,16 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from pathlib import Path
+from enum import Enum
 
 from nio import AsyncClient, MatrixRoom, RoomMessageText
+
+import markdown
+
+class ParseTypes(Enum):
+    HTML = "html"
+    TEXT = "plain"
+    MARKDOWN = "markdown"
 
 
 @dataclass
@@ -220,26 +228,33 @@ class Message:
                 mimetype=info.get('mimetype')
             )
         return None
-        
-    async def reply(self, text: str) -> None:
+
+    async def reply(self, text: str, parse_mode: Optional[ParseTypes] = ParseTypes.MARKDOWN) -> str:
         """
         Reply to this message.
-        
-        Args:
-            text: Reply text
         """
         content = {
             "msgtype": "m.text",
-            "body": text,
+            "body": text.strip(),
             "m.relates_to": {
                 "m.in_reply_to": {
                     "event_id": self.event_id
                 }
             }
         }
+
+        if parse_mode != ParseTypes.TEXT:
+            content["format"] = "org.matrix.custom.html"
+
+            if parse_mode == ParseTypes.MARKDOWN:
+                cleaned_text = text.strip()
+                content["formatted_body"] = markdown.markdown(cleaned_text, extensions=['fenced_code'])
+            elif parse_mode == ParseTypes.HTML:
+                content["formatted_body"] = text
+
         response = await self._client.room_send(self._room.room_id, "m.room.message", content)
         return response.event_id
-        
+
     async def react(self, emoji: str) -> None:
         """
         React to this message with an emoji.
