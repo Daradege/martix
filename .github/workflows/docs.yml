@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pdoc matrix-nio[e2e] aiofiles>=23.0.0 pillow>=10.0.0
+          pip install pdoc matrix-nio[e2e] aiofiles>=23.0.0 pillow>=10.0.0 martix
 
       - name: Generate documentation
         run: |
