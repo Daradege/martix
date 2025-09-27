@@ -9,6 +9,7 @@ from pathlib import Path
 from enum import Enum
 
 from nio import AsyncClient, MatrixRoom, RoomMessageText
+from nio import RoomTopicEvent, RoomNameEvent, RoomMemberEvent
 
 import markdown
 
@@ -162,7 +163,6 @@ class Message:
     def time(self) -> datetime:
         """Get message timestamp."""
         return datetime.fromtimestamp(self._event.server_timestamp / 1000)
-        
     @property
     def user(self) -> User:
         """Get message sender information."""

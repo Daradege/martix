@@ -40,7 +40,7 @@ def parse_command(message: Message, prefix: str) -> Optional[Command]:
     )
 
 
-def create_message_object(room: MatrixRoom, event: RoomMessageText, client: AsyncClient) -> Message:
+async def create_message_object(room: MatrixRoom, event: RoomMessageText, client: AsyncClient) -> Message:
     """
     Create a Message object from Matrix room and event.
     
@@ -52,6 +52,7 @@ def create_message_object(room: MatrixRoom, event: RoomMessageText, client: Asyn
     Returns:
         Message object
     """
+
     return Message(room, event, client)
 
 

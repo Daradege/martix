@@ -13,6 +13,8 @@ from nio.events import Event, RoomMessage, InviteEvent, RoomMemberEvent, MegolmE
 from nio.store import SqliteStore
 from nio.crypto import OlmDevice
 
+import logging
+
 from .types import Message, Command, User, Room, File, ParseTypes
 from .events import EventHandler
 from .exceptions import AuthenticationError, NetworkError, MartixError
@@ -29,7 +31,7 @@ class Client:
     
     def __init__(self, user_id: str, password: str, homeserver: str, 
                  device_name: str = "Martix Bot", e2ee: bool = False, 
-                 store_path: str = "./.store"):
+                 store_path: str = "./.store", full_state: bool = True):
         """
         Initialize the Matrix client.
         
@@ -40,6 +42,7 @@ class Client:
             device_name: Device name for this session
             e2ee: Enable end-to-end encryption support
             store_path: Path to store encryption keys and state
+            full_state: Syncs with full state
         """
         self.user_id = user_id
         self.password = password
@@ -48,16 +51,21 @@ class Client:
         self.e2ee = e2ee
         self.store_path = Path(store_path)
         self.command_prefix = "/"
-        
+
+
+        self.full_state = full_state
+
         self._client: Optional[AsyncClient] = None
         self._event_handler = EventHandler()
         self._user: Optional[User] = None
         self._sync_token_file = Path(".martix_sync_token")
         self._next_batch: Optional[str] = None
-        
+
+        logging.getLogger("nio").setLevel(logging.CRITICAL)
+
         if self.e2ee:
             self.store_path.mkdir(exist_ok=True)
-        
+
     @property
     def user(self) -> Optional[User]:
         """Get the current authenticated user."""
@@ -153,7 +161,7 @@ class Client:
                 user=self.user_id,
                 device_id=self.device_name
             )
-        
+
         try:
             response = await self._client.login(self.password, device_name=self.device_name)
             if not isinstance(response, LoginResponse):
@@ -345,7 +353,7 @@ class Client:
         """Continuously sync with the homeserver."""
         while True:
             try:
-                response = await self.client.sync(since=self._next_batch, timeout=30000)
+                response = await self.client.sync(since=self._next_batch, timeout=30000, full_state=self.full_state)
                 if isinstance(response, SyncResponse):
                     self._next_batch = response.next_batch
                     self._save_sync_token(self._next_batch)
@@ -409,7 +417,7 @@ class Client:
         if not hasattr(event, 'body') or not event.body:
             return
             
-        message = create_message_object(room, event, self.client)
+        message = await create_message_object(room, event, self.client)
         
         if message.text.startswith(self.command_prefix):
             command = parse_command(message, self.command_prefix)
