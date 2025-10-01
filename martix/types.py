@@ -164,7 +164,6 @@ class Message:
         content = self._event.source.get("content", {})
 
         in_reply = content.get("m.relates_to", {}).get("m.in_reply_to", {})
-        print(in_reply)
         if "event_id" in in_reply:
             event = await self._client.room_get_event(self._room.room_id, in_reply["event_id"])
             message = Message(self._room, event.event, self._client)
