@@ -5,6 +5,7 @@ Utility functions for Martix library.
 from typing import Optional, List, TYPE_CHECKING
 from nio import AsyncClient, MatrixRoom, RoomMessageText
 import markdown
+import typing
 
 from .types import Message, Command, User, Room
 

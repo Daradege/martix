@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from enum import Enum
 
-from nio import AsyncClient, MatrixRoom, RoomMessageText
+from nio import AsyncClient, MatrixRoom, RoomMessageText, RoomGetEventError
 from nio import RoomTopicEvent, RoomNameEvent, RoomMemberEvent
 
 import markdown
+import json
 
 class ParseTypes(Enum):
     HTML = "html"
@@ -158,6 +159,30 @@ class Message:
     def event_id(self) -> str:
         """Get message event ID."""
         return self._event.event_id
+
+    async def replied_to(self) -> Optional['Message']:
+        content = self._event.source.get("content", {})
+
+        in_reply = content.get("m.relates_to", {}).get("m.in_reply_to", {})
+        print(in_reply)
+        if "event_id" in in_reply:
+            event = await self._client.room_get_event(self._room.room_id, in_reply["event_id"])
+            message = Message(self._room, event.event, self._client)
+            return message
+
+
+        relates = content.get("m.relates_to", {})
+        if relates.get("rel_type") == "m.reply":
+            return relates.get("event_id")
+
+        return None
+
+    async def get_parent_message(self) -> Optional["Message"]:
+        parent_id = self.replied_to
+        if not parent_id:
+            return None
+        resp = await self._client.room_get_event(self._room.room_id, parent_id)
+        return Message(self._room, resp.event, self._client)
         
     @property
     def time(self) -> datetime:
